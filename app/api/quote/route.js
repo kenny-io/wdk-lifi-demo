@@ -57,10 +57,15 @@ export async function POST (request) {
       .reduce((sum, g) => sum + parseFloat(g.amountUSD ?? 0), 0)
       .toFixed(4)
 
+    // The top-level step holds the real route tool. `includedSteps` may begin
+    // with a `feeCollection` step (when an integrator fee is configured), so
+    // never read the route name from it — and filter it out of the fallback.
+    const isFeeStep = s => s.type === 'feeCollection' || s.tool === 'feeCollection'
+    const bridgeSteps = steps.filter(s => !isFeeStep(s))
     const toolName =
-      firstStep.toolDetails?.name ??
-      firstStep.tool ??
-      (steps.map(s => s.toolDetails?.name ?? s.tool).filter(Boolean).join(' + ') || 'Unknown')
+      data.toolDetails?.name ??
+      data.tool ??
+      (bridgeSteps.map(s => s.toolDetails?.name ?? s.tool).filter(Boolean).join(' + ') || 'Unknown')
 
     return NextResponse.json({
       fromAmount: estimate.fromAmount ?? data.estimate?.fromAmount ?? String(fromAmount),

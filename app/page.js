@@ -287,15 +287,16 @@ function TokenModal({ open, onClose, onSelect, tokens, search, onSearch, loading
   )
 }
 
-function ChainSelector({ value, chains, onChange }) {
+function ChainSelector({ value, chains, onChange, placeholder = 'Destination chain…', disabled = false }) {
   return (
     <div className="chain-select-wrap">
       <select
         className="chain-selector"
         value={value ?? ''}
+        disabled={disabled}
         onChange={e => onChange(Number(e.target.value))}
       >
-        <option value="">Destination chain…</option>
+        <option value="">{placeholder}</option>
         {chains.map(c => (
           <option key={c.id} value={c.id}>{c.name}</option>
         ))}
@@ -640,6 +641,47 @@ export default function BridgePage() {
     }
   }, [])
 
+  // ── Switch origin chain (source = connected wallet network) ────────────────
+
+  const switchChain = useCallback(async (chainId) => {
+    if (!chainId || chainId === wallet.chainId) return
+    if (typeof window === 'undefined' || !window.ethereum) return
+    const hexId = '0x' + chainId.toString(16)
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: hexId }],
+      })
+      // The `chainChanged` event handler updates wallet.chainId + resets state.
+    } catch (e) {
+      // 4902 = chain unknown to the wallet → try to add it, then it becomes active.
+      if (e.code === 4902 || e.code === -32603) {
+        const chain = chains.find(c => c.id === chainId)
+        const mm = chain?.metamask
+        if (!mm) {
+          alert(`Add ${chain?.name ?? `chain ${chainId}`} to your wallet manually, then select it.`)
+          return
+        }
+        try {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: hexId,
+              chainName: mm.chainName ?? chain.name,
+              nativeCurrency: mm.nativeCurrency,
+              rpcUrls: mm.rpcUrls,
+              blockExplorerUrls: mm.blockExplorerUrls,
+            }],
+          })
+        } catch (addErr) {
+          if (addErr.code !== 4001) console.error('addEthereumChain:', addErr)
+        }
+      } else if (e.code !== 4001) {
+        console.error('switchChain:', e)
+      }
+    }
+  }, [wallet.chainId, chains])
+
   // ── Copy code snippet ──────────────────────────────────────────────────────
 
   const handleCopy = useCallback(() => {
@@ -785,7 +827,11 @@ export default function BridgePage() {
     try {
       const { BrowserProvider } = await import('ethers')
       const provider = new BrowserProvider(window.ethereum)
-      const signer = await provider.getSigner()
+      // Pass the already-connected address so ethers resolves the signer via
+      // `eth_accounts` instead of firing a fresh `eth_requestAccounts`. The
+      // latter throws a "-32603 could not coalesce" error when a wallet request
+      // (e.g. a pending chain switch) is already in flight.
+      const signer = await provider.getSigner(wallet.address)
 
       // Step 1: approval if needed
       if (!quote.skipApproval && quote.approvalAddress && quote.fromToken) {
@@ -851,7 +897,17 @@ export default function BridgePage() {
         // User rejected — just reset step
         setTxState(s => ({ ...s, step: null }))
       } else {
-        setTxState(s => ({ ...s, step: 'error', error: e.message }))
+        // -32603 / "could not coalesce" means the wallet already has a request
+        // pending (an open MetaMask popup). Surface a clear, actionable message
+        // instead of the raw ethers error dump.
+        const isPending =
+          e.code === -32603 ||
+          e.error?.code === -32603 ||
+          /could not coalesce|already pending|request.*pending/i.test(e.message ?? '')
+        const message = isPending
+          ? 'Your wallet already has a pending request. Open your wallet to approve or dismiss it, then retry.'
+          : (e.shortMessage ?? e.message ?? 'Transaction failed')
+        setTxState(s => ({ ...s, step: 'error', error: message }))
       }
     }
   }, [quote, wallet.address, wallet.chainId, toChainId, fromAmount, recentTxs])
@@ -954,7 +1010,13 @@ export default function BridgePage() {
               <div className="section-label">You Send</div>
               <div className="token-amount-row">
                 <div className="token-col">
-                  <div className="chain-badge">{fromChainName}</div>
+                  <ChainSelector
+                    value={wallet.chainId}
+                    chains={chains}
+                    onChange={switchChain}
+                    placeholder={wallet.connected ? 'Source chain…' : fromChainName}
+                    disabled={!wallet.connected}
+                  />
                   <button
                     className={`token-selector-btn${!fromToken ? ' placeholder' : ''}`}
                     onClick={() => setTokenModal('from')}

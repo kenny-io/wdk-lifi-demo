@@ -38,6 +38,16 @@ export async function POST (request) {
     denyBridges.split(',').forEach(b => params.append('denyBridges', b.trim()))
   }
 
+  // LI.FI timing strategies — bound how long the API waits while aggregating
+  // routes before responding, instead of blocking on every bridge/exchange.
+  // Format: minWaitTime-<minWaitMs>-<startingExpectedResults>-<reduceEveryMs>.
+  // Defaults return as soon as one usable route is found (the "fastest
+  // response" profile); overridable via env. See https://docs.li.fi/guides/latency
+  const swapTiming = process.env.LIFI_SWAP_TIMING ?? 'minWaitTime-600-1-300'
+  const routeTiming = process.env.LIFI_ROUTE_TIMING ?? 'minWaitTime-900-1-300'
+  params.append('swapStepTimingStrategies', swapTiming)
+  params.append('routeTimingStrategies', routeTiming)
+
   try {
     const res = await fetch(`https://li.quest/v1/quote?${params.toString()}`, { headers })
     const data = await res.json()

@@ -19,6 +19,9 @@ export async function GET () {
       chainType: c.chainType,
       nativeSymbol: c.nativeToken?.symbol ?? 'ETH',
       logoURI: c.logoURI ?? null,
+      // MetaMask `wallet_addEthereumChain` params, used as a fallback when the
+      // wallet doesn't already know the chain the user switches the origin to.
+      metamask: c.metamask ?? null,
     }))
     return NextResponse.json({ chains })
   } catch (err) {

@@ -1,5 +1,5 @@
 import { WalletAccountEvm } from '@tetherto/wdk-wallet-evm'
-import { LifiSwidgeProtocol } from '@lifi/wdk-protocol-swidge-lifi'
+import { LifiSwidgeProtocol } from '@kenny_io/wdk-protocol-swidge-lifi'
 import { NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
